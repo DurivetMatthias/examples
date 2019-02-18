@@ -5,7 +5,7 @@ Obtains the prediction for a given date in the test.
 import numpy as np
 
 from . import request_helper #pylint: disable=relative-beyond-top-level
-from .. import preprocess    #pylint: disable=relative-beyond-top-level
+from helpers import preprocess
 
 
 def send_pratical_request(date="2014-08-12"):

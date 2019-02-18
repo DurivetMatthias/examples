@@ -6,45 +6,16 @@ import logging
 import os
 import argparse
 import time
-from google.cloud import storage
+import shutil
+import pandas as pd
 import tensorflow as tf
 
-import models
-import preprocess
-import metrics
-
-
-def get_preprocessed_data():
-  """Obtain the preprocessed data."""
-  tickers = ['snp', 'nyse', 'djia', 'nikkei', 'hangseng', 'ftse', 'dax', 'aord']
-  closing_data = preprocess.load_data(tickers)
-  time_series = preprocess.preprocess_data(closing_data)
-  training_test_data = preprocess.train_test_split(time_series, train_test_ratio=0.8)
-  return training_test_data
-
-
-def upload_to_storage(bucket, export_path):
-  """Upload files from export path to Google Cloud Storage.
-
-  Args:
-    bucket (str): Google Cloud Storage bucket
-    export_path (str): export path
-
-  Returns:
-
-  """
-  client = storage.Client()
-  bucket = client.get_bucket(bucket)
-  if bucket:
-    for root, _, files in os.walk(export_path):
-      for file in files:
-        path = os.path.join(root, file)
-        blob = bucket.blob(path)
-        blob.upload_from_filename(path)
+from helpers import preprocess, models, metrics
+from helpers import storage as storage_helper
 
 
 def run_training(args):
-  """Runs the ML model training script.
+  """Runs the ML model training.
 
   Args:
     args: args that are passed when submitting the training
@@ -58,7 +29,14 @@ def run_training(args):
 
   # get the data
   logging.info('getting the data...')
-  training_test_data = get_preprocessed_data()
+  temp_folder = 'data'
+  if not os.path.exists(temp_folder):
+    os.mkdir(temp_folder)
+  file_path = os.path.join(temp_folder, 'data.csv')
+  storage_helper.download_blob(args.data_bucket, args.blob_path, file_path)
+  time_series = pd.read_csv(file_path)
+  training_test_data = preprocess.train_test_split(time_series, 0.8)
+
 
   # define training objective
   logging.info('defining the training objective...')
@@ -122,8 +100,12 @@ def run_training(args):
   )
 
   # save model on GCS
-  logging.info("uploading to " + args.bucket + "/" + export_path)
-  upload_to_storage(args.bucket, export_path)
+  logging.info("uploading to " + args.model_bucket + "/" + export_path)
+  storage_helper.upload_to_storage(args.model_bucket, export_path)
+
+  # remove local files
+  shutil.rmtree(export_path)
+  shutil.rmtree(temp_folder)
 
 
 def main():
@@ -145,7 +127,17 @@ def main():
                       help='version (stored for serving)',
                       default='1')
 
-  parser.add_argument('--bucket',
+  parser.add_argument('--data_bucket',
+                      type=str,
+                      help='GCS bucket where data is saved',
+                      default='<your-bucket-name>')
+
+  parser.add_argument('--blob_path',
+                      type=str,
+                      help='GCS blob path where data is saved',
+                      default='<your-bucket-name>')
+
+  parser.add_argument('--model_bucket',
                       type=str,
                       help='GCS bucket where model is saved',
                       default='<your-bucket-name>')
